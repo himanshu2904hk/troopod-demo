@@ -11,6 +11,7 @@ export default async function handler(req, res) {
   }
 
   let landingPageContent = '';
+  let originalHtml = '';
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
@@ -22,8 +23,8 @@ export default async function handler(req, res) {
       }
     });
     clearTimeout(timeout);
-    const html = await lpRes.text();
-    landingPageContent = html
+    originalHtml = await lpRes.text();
+    landingPageContent = originalHtml
       .replace(/<script[\s\S]*?<\/script>/gi, '')
       .replace(/<style[\s\S]*?<\/style>/gi, '')
       .replace(/<[^>]+>/g, ' ')
@@ -33,7 +34,7 @@ export default async function handler(req, res) {
   } catch (e) {
     try {
       const domain = new URL(landing_page_url).hostname.replace('www.', '');
-      landingPageContent = `Could not fetch page. URL: ${landing_page_url} (${domain}). Infer what this company's landing page likely says based on the domain.`;
+      landingPageContent = `Could not fetch page. Domain: ${domain}. Infer typical landing page content for this company.`;
     } catch {
       landingPageContent = `Could not fetch page. URL: ${landing_page_url}.`;
     }
@@ -48,27 +49,43 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
-        max_tokens: 1500,
+        max_tokens: 3000,
         temperature: 0.7,
         messages: [{
           role: 'user',
           content: `You are an AI that personalizes landing pages to match ad creatives.
 
 Ad description: ${ad_description}
-
 Landing page URL: ${landing_page_url}
 Landing page content: ${landingPageContent}
 
-Tasks:
-1. Analyze the ad - extract: headline, tone, CTA, product, audience, key message
-2. Based on the landing page content or domain, write what the ORIGINAL page likely says
-3. Rewrite the landing page copy to align perfectly with the ad messaging and tone
+Your job:
+1. Analyze the ad - extract headline, tone, CTA, product, audience, key message
+2. Generate a FULL personalized HTML landing page that:
+   - Keeps the same structure and layout as the original page
+   - Rewrites ALL copy (headline, subheadline, features, CTA, footer) to match the ad's tone and messaging
+   - Uses inline CSS for styling - make it look like a real modern landing page
+   - Includes a hero section, 3 feature cards, and a CTA section
+   - Uses colors and visual style inspired by the ad
 
-Respond ONLY with valid JSON, no markdown fences, no extra text:
+Respond ONLY with valid JSON, no markdown:
 {
-  "ad_analysis": { "headline": "...", "tone": "...", "cta": "...", "audience": "...", "key_message": "..." },
-  "original": { "hero_headline": "...", "hero_sub": "...", "cta": "...", "feature_1": "...", "feature_2": "...", "feature_3": "..." },
-  "personalized": { "hero_headline": "...", "hero_sub": "...", "cta": "...", "feature_1": "...", "feature_2": "...", "feature_3": "..." },
+  "ad_analysis": {
+    "headline": "...",
+    "tone": "...",
+    "cta": "...",
+    "audience": "...",
+    "key_message": "..."
+  },
+  "original_copy": {
+    "hero_headline": "...",
+    "hero_sub": "...",
+    "cta": "...",
+    "feature_1": "...",
+    "feature_2": "...",
+    "feature_3": "..."
+  },
+  "personalized_html": "<!DOCTYPE html><html>...</html>",
   "changes": ["change 1", "change 2", "change 3"]
 }`
         }]
@@ -76,7 +93,6 @@ Respond ONLY with valid JSON, no markdown fences, no extra text:
     });
 
     const groqData = await groqRes.json();
-
     if (!groqRes.ok) {
       return res.status(500).json({ error: 'Groq API error: ' + JSON.stringify(groqData) });
     }
@@ -89,8 +105,12 @@ Respond ONLY with valid JSON, no markdown fences, no extra text:
       parsed = JSON.parse(clean);
     } catch {
       const match = clean.match(/\{[\s\S]*\}/);
-      if (match) parsed = JSON.parse(match[0]);
-      else return res.status(500).json({ error: 'Parse failed', raw: clean.slice(0, 300) });
+      if (match) {
+        try { parsed = JSON.parse(match[0]); }
+        catch { return res.status(500).json({ error: 'Parse failed', raw: clean.slice(0, 300) }); }
+      } else {
+        return res.status(500).json({ error: 'No JSON found', raw: clean.slice(0, 300) });
+      }
     }
 
     return res.status(200).json(parsed);
