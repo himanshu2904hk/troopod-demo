@@ -10,7 +10,6 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing fields' });
   }
 
-  // Try to fetch landing page, fall back gracefully
   let landingPageContent = '';
   try {
     const controller = new AbortController();
@@ -20,7 +19,6 @@ export default async function handler(req, res) {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html',
-        'Accept-Language': 'en-US,en;q=0.9',
       }
     });
     clearTimeout(timeout);
@@ -33,25 +31,28 @@ export default async function handler(req, res) {
       .trim()
       .slice(0, 3000);
   } catch (e) {
-    // Extract domain for context
     try {
       const domain = new URL(landing_page_url).hostname.replace('www.', '');
-      landingPageContent = `Could not fetch page content. The URL is ${landing_page_url} (${domain}). Please infer what this company's landing page likely says based on the domain name and generate appropriate original and personalized copy.`;
+      landingPageContent = `Could not fetch page. URL: ${landing_page_url} (${domain}). Infer what this company's landing page likely says based on the domain.`;
     } catch {
-      landingPageContent = `Could not fetch page. URL: ${landing_page_url}. Please infer the landing page content from the URL.`;
+      landingPageContent = `Could not fetch page. URL: ${landing_page_url}.`;
     }
   }
 
   try {
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: `You are an AI that personalizes landing pages to match ad creatives.
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: 1500,
+        temperature: 0.7,
+        messages: [{
+          role: 'user',
+          content: `You are an AI that personalizes landing pages to match ad creatives.
 
 Ad description: ${ad_description}
 
@@ -70,20 +71,17 @@ Respond ONLY with valid JSON, no markdown fences, no extra text:
   "personalized": { "hero_headline": "...", "hero_sub": "...", "cta": "...", "feature_1": "...", "feature_2": "...", "feature_3": "..." },
   "changes": ["change 1", "change 2", "change 3"]
 }`
-            }]
-          }],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 1500 }
-        })
-      }
-    );
+        }]
+      })
+    });
 
-    const geminiData = await geminiRes.json();
+    const groqData = await groqRes.json();
 
-    if (!geminiRes.ok) {
-      return res.status(500).json({ error: 'Gemini API error: ' + JSON.stringify(geminiData) });
+    if (!groqRes.ok) {
+      return res.status(500).json({ error: 'Groq API error: ' + JSON.stringify(groqData) });
     }
 
-    const raw = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const raw = groqData.choices?.[0]?.message?.content || '';
     const clean = raw.replace(/```json|```/g, '').trim();
 
     let parsed;
