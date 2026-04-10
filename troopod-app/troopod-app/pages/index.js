@@ -106,7 +106,16 @@ export default function Home() {
                 />
               </div>
               <div className={styles.iframeCol}>
-                <div className={`${styles.iframeLabel} ${styles.persLabel}`}>Personalized version</div>
+                <div className={`${styles.iframeLabel} ${styles.persLabel}`} style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span>Personalized version</span>
+                  <button onClick={() => {
+                    const blob = new Blob([result.personalized_html], {type: 'text/html'});
+                    const url = URL.createObjectURL(blob);
+                    window.open(url, '_blank');
+                  }} style={{fontSize:'11px',padding:'3px 10px',background:'#3C3489',color:'#fff',border:'none',borderRadius:'4px',cursor:'pointer'}}>
+                    Open full screen ↗
+                  </button>
+                </div>
                 <iframe
                   srcDoc={result.personalized_html}
                   className={styles.iframe}
