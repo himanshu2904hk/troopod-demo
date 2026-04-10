@@ -11,7 +11,6 @@ export default async function handler(req, res) {
   }
 
   let landingPageContent = '';
-  let originalHtml = '';
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
@@ -23,8 +22,8 @@ export default async function handler(req, res) {
       }
     });
     clearTimeout(timeout);
-    originalHtml = await lpRes.text();
-    landingPageContent = originalHtml
+    const html = await lpRes.text();
+    landingPageContent = html
       .replace(/<script[\s\S]*?<\/script>/gi, '')
       .replace(/<style[\s\S]*?<\/style>/gi, '')
       .replace(/<[^>]+>/g, ' ')
@@ -34,9 +33,9 @@ export default async function handler(req, res) {
   } catch (e) {
     try {
       const domain = new URL(landing_page_url).hostname.replace('www.', '');
-      landingPageContent = `Could not fetch page. Domain: ${domain}. Infer typical landing page content for this company.`;
+      landingPageContent = `Domain: ${domain}. Infer typical landing page content for this company.`;
     } catch {
-      landingPageContent = `Could not fetch page. URL: ${landing_page_url}.`;
+      landingPageContent = `URL: ${landing_page_url}.`;
     }
   }
 
@@ -48,25 +47,32 @@ export default async function handler(req, res) {
         'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: 3000,
+        model: 'deepseek-r1-distill-llama-70b',
+        max_tokens: 4000,
         temperature: 0.7,
         messages: [{
           role: 'user',
-          content: `You are an AI that personalizes landing pages to match ad creatives.
+          content: `You are an expert UI designer and copywriter that personalizes landing pages to match ad creatives.
 
 Ad description: ${ad_description}
 Landing page URL: ${landing_page_url}
 Landing page content: ${landingPageContent}
 
-Your job:
-1. Analyze the ad - extract headline, tone, CTA, product, audience, key message
-2. Generate a FULL personalized HTML landing page that:
-   - Keeps the same structure and layout as the original page
-   - Rewrites ALL copy (headline, subheadline, features, CTA, footer) to match the ad's tone and messaging
-   - Uses inline CSS for styling - make it look like a real modern landing page
-   - Includes a hero section, 3 feature cards, and a CTA section
-   - Uses colors and visual style inspired by the ad
+Generate a STUNNING, DETAILED personalized HTML landing page. Requirements:
+- Full-width hero section with a bold background color matching the ad's brand colors
+- Large hero image area with gradient overlay
+- Big bold headline (50px+) matching the ad's headline
+- Compelling subheadline
+- Prominent CTA button matching the ad's CTA
+- 3 feature cards with icons (use emoji as icons), titles, and descriptions
+- A second CTA section at the bottom
+- Footer with brand name
+- Use rich inline CSS: gradients, shadows, hover effects, rounded corners, proper spacing
+- Make it look like a REAL professional landing page, not a simple mockup
+- Colors, fonts and style must match the ad's brand and tone
+- Include background images using CSS gradients to simulate the ad's visual style
+- Min height of hero: 500px
+- Feature cards should have shadows and hover effects
 
 Respond ONLY with valid JSON, no markdown:
 {
@@ -85,8 +91,8 @@ Respond ONLY with valid JSON, no markdown:
     "feature_2": "...",
     "feature_3": "..."
   },
-  "personalized_html": "<!DOCTYPE html><html>...</html>",
-  "changes": ["change 1", "change 2", "change 3"]
+  "personalized_html": "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'><title>Personalized Page</title></head><body style='margin:0;font-family:...'> ... VERY DETAILED HTML WITH INLINE CSS ... </body></html>",
+  "changes": ["change 1", "change 2", "change 3", "change 4", "change 5"]
 }`
         }]
       })
