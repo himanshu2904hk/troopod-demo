@@ -6,32 +6,43 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { ad_description, landing_page_url } = req.body;
-
   if (!ad_description || !landing_page_url) {
-    return res.status(400).json({ error: 'Missing ad_description or landing_page_url' });
+    return res.status(400).json({ error: 'Missing fields' });
+  }
+
+  // Try to fetch landing page, fall back gracefully
+  let landingPageContent = '';
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const lpRes = await fetch(landing_page_url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html',
+        'Accept-Language': 'en-US,en;q=0.9',
+      }
+    });
+    clearTimeout(timeout);
+    const html = await lpRes.text();
+    landingPageContent = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 3000);
+  } catch (e) {
+    // Extract domain for context
+    try {
+      const domain = new URL(landing_page_url).hostname.replace('www.', '');
+      landingPageContent = `Could not fetch page content. The URL is ${landing_page_url} (${domain}). Please infer what this company's landing page likely says based on the domain name and generate appropriate original and personalized copy.`;
+    } catch {
+      landingPageContent = `Could not fetch page. URL: ${landing_page_url}. Please infer the landing page content from the URL.`;
+    }
   }
 
   try {
-    // Step 1: Fetch landing page
-    let landingPageContent = '';
-    try {
-      const lpRes = await fetch(landing_page_url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TroopodBot/1.0)' }
-      });
-      const html = await lpRes.text();
-      // Strip HTML tags, get readable text
-      landingPageContent = html
-        .replace(/<script[\s\S]*?<\/script>/gi, '')
-        .replace(/<style[\s\S]*?<\/style>/gi, '')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 3000);
-    } catch (e) {
-      landingPageContent = 'Could not fetch landing page. Please generate based on the URL domain only.';
-    }
-
-    // Step 2: Call Gemini
     const geminiRes = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
@@ -49,10 +60,10 @@ Landing page content: ${landingPageContent}
 
 Tasks:
 1. Analyze the ad - extract: headline, tone, CTA, product, audience, key message
-2. Extract key copy from the landing page
+2. Based on the landing page content or domain, write what the ORIGINAL page likely says
 3. Rewrite the landing page copy to align perfectly with the ad messaging and tone
 
-Respond ONLY with valid JSON, no markdown:
+Respond ONLY with valid JSON, no markdown fences, no extra text:
 {
   "ad_analysis": { "headline": "...", "tone": "...", "cta": "...", "audience": "...", "key_message": "..." },
   "original": { "hero_headline": "...", "hero_sub": "...", "cta": "...", "feature_1": "...", "feature_2": "...", "feature_3": "..." },
@@ -67,6 +78,11 @@ Respond ONLY with valid JSON, no markdown:
     );
 
     const geminiData = await geminiRes.json();
+
+    if (!geminiRes.ok) {
+      return res.status(500).json({ error: 'Gemini API error: ' + JSON.stringify(geminiData) });
+    }
+
     const raw = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || '';
     const clean = raw.replace(/```json|```/g, '').trim();
 
@@ -75,7 +91,8 @@ Respond ONLY with valid JSON, no markdown:
       parsed = JSON.parse(clean);
     } catch {
       const match = clean.match(/\{[\s\S]*\}/);
-      parsed = match ? JSON.parse(match[0]) : { error: 'Parse failed', raw: clean.slice(0, 300) };
+      if (match) parsed = JSON.parse(match[0]);
+      else return res.status(500).json({ error: 'Parse failed', raw: clean.slice(0, 300) });
     }
 
     return res.status(200).json(parsed);
