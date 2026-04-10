@@ -10,7 +10,7 @@ export default function Home() {
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
 
-  const steps = ['Fetching landing page...', 'Analyzing ad creative...', 'Generating personalized copy...', 'Almost done...'];
+  const steps = ['Fetching landing page...', 'Analyzing ad creative...', 'Generating personalized page...', 'Almost done...'];
 
   async function generate() {
     setError('');
@@ -48,7 +48,7 @@ export default function Home() {
 
       <div className={styles.header}>
         <h1>Ad landing page personalizer</h1>
-        <p>Describe your ad + paste a landing page URL → get a personalized page instantly</p>
+        <p>Describe your ad + paste a landing page URL → get a fully personalized page instantly</p>
       </div>
 
       <div className={styles.card}>
@@ -69,7 +69,7 @@ export default function Home() {
           type="text"
           value={lpUrl}
           onChange={e => setLpUrl(e.target.value)}
-          placeholder="https://shopify.com"
+          placeholder="https://swiggy.com"
         />
       </div>
 
@@ -81,12 +81,13 @@ export default function Home() {
 
       {result && (
         <div className={styles.output}>
+
           {result.ad_analysis && (
             <div className={styles.section}>
               <h2>Ad analysis</h2>
               <div className={styles.tags}>
                 {Object.entries(result.ad_analysis).map(([k, v]) => (
-                  <span key={k} className={styles.tag}>{k.replace('_', ' ')}: {v}</span>
+                  <span key={k} className={styles.tag}>{k.replace(/_/g, ' ')}: {v}</span>
                 ))}
               </div>
             </div>
@@ -94,32 +95,24 @@ export default function Home() {
 
           <div className={styles.section}>
             <h2>Side-by-side comparison</h2>
-            <div className={styles.grid}>
-              <div className={styles.col}>
-                <div className={styles.colHeader}>Original page copy</div>
-                <div className={styles.colBody}>
-                  <p className={styles.headline}>{result.original?.hero_headline}</p>
-                  <p className={styles.subtext}>{result.original?.hero_sub}</p>
-                  <span className={styles.cta}>{result.original?.cta}</span>
-                  <div className={styles.features}>
-                    {[result.original?.feature_1, result.original?.feature_2, result.original?.feature_3].filter(Boolean).map((f, i) => (
-                      <p key={i}>• {f}</p>
-                    ))}
-                  </div>
-                </div>
+            <div className={styles.iframeGrid}>
+              <div className={styles.iframeCol}>
+                <div className={styles.iframeLabel}>Original landing page</div>
+                <iframe
+                  src={lpUrl}
+                  className={styles.iframe}
+                  title="Original"
+                  sandbox="allow-scripts allow-same-origin"
+                />
               </div>
-              <div className={styles.col}>
-                <div className={`${styles.colHeader} ${styles.pers}`}>Personalized copy</div>
-                <div className={styles.colBody}>
-                  <p className={`${styles.headline} ${styles.persText}`}>{result.personalized?.hero_headline}</p>
-                  <p className={styles.subtext}>{result.personalized?.hero_sub}</p>
-                  <span className={`${styles.cta} ${styles.persCta}`}>{result.personalized?.cta}</span>
-                  <div className={styles.features}>
-                    {[result.personalized?.feature_1, result.personalized?.feature_2, result.personalized?.feature_3].filter(Boolean).map((f, i) => (
-                      <p key={i}>• {f}</p>
-                    ))}
-                  </div>
-                </div>
+              <div className={styles.iframeCol}>
+                <div className={`${styles.iframeLabel} ${styles.persLabel}`}>Personalized version</div>
+                <iframe
+                  srcDoc={result.personalized_html}
+                  className={styles.iframe}
+                  title="Personalized"
+                  sandbox="allow-scripts"
+                />
               </div>
             </div>
           </div>
