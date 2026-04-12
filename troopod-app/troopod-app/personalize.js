@@ -10,8 +10,41 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing fields' });
   }
 
-  // Fetch actual landing page HTML
-  let originalHtml = '';
+  // Curated food/category images
+  const imagePool = {
+    food: [
+      'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1600&q=80',
+      'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=1600&q=80',
+      'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=1600&q=80',
+      'https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=1600&q=80',
+    ],
+    fitness: [
+      'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=1600&q=80',
+      'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=1600&q=80',
+    ],
+    tech: [
+      'https://images.unsplash.com/photo-1518770660439-4636190af475?w=1600&q=80',
+      'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=1600&q=80',
+    ],
+    fashion: [
+      'https://images.unsplash.com/photo-1483985988355-763728e1935b?w=1600&q=80',
+    ],
+    default: [
+      'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1600&q=80',
+    ]
+  };
+
+  const adLower = ad_description.toLowerCase();
+  let category = 'default';
+  if (adLower.match(/food|eat|hungry|restaurant|delivery|biryani|pizza|burger|chef|cuisine|zomato|swiggy/)) category = 'food';
+  else if (adLower.match(/fitness|gym|run|sport|athlete|nike|workout/)) category = 'fitness';
+  else if (adLower.match(/tech|software|app|digital|saas/)) category = 'tech';
+  else if (adLower.match(/fashion|clothes|wear|style/)) category = 'fashion';
+
+  const images = imagePool[category];
+  const heroImage = images[Math.floor(Math.random() * images.length)];
+
+  let landingPageContent = '';
   let fetchSuccess = false;
   try {
     const controller = new AbortController();
@@ -20,115 +53,82 @@ export default async function handler(req, res) {
       signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'text/html',
       }
     });
     clearTimeout(timeout);
-    originalHtml = await lpRes.text();
+    const html = await lpRes.text();
     fetchSuccess = true;
+    landingPageContent = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 3000);
   } catch (e) {
-    fetchSuccess = false;
+    try {
+      const domain = new URL(landing_page_url).hostname.replace('www.', '');
+      landingPageContent = `Domain: ${domain}. Infer typical landing page content.`;
+    } catch {
+      landingPageContent = `URL: ${landing_page_url}.`;
+    }
   }
 
-  // Extract readable text from HTML
-  const textContent = originalHtml
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 4000);
-
-  // Extract key HTML elements for injection
-  const headlineMatches = originalHtml.match(/<h1[^>]*>([\s\S]*?)<\/h1>/gi) || [];
-  const h2Matches = originalHtml.match(/<h2[^>]*>([\s\S]*?)<\/h2>/gi) || [];
-  const buttonMatches = originalHtml.match(/<button[^>]*>([\s\S]*?)<\/button>/gi) || [];
-
-  const existingElements = {
-    h1s: headlineMatches.slice(0, 3).join('\n'),
-    h2s: h2Matches.slice(0, 5).join('\n'),
-    buttons: buttonMatches.slice(0, 3).join('\n'),
-  };
-
   try {
-    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const nvidiaRes = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
+        'Authorization': `Bearer ${process.env.NVIDIA_API_KEY}`
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: 4000,
+        model: 'meta/llama-3.1-405b-instruct',
+        max_tokens: 4096,
         temperature: 0.7,
         messages: [{
           role: 'user',
-          content: `You are a CRO (Conversion Rate Optimization) expert and copywriter.
+          content: `You are an expert CRO specialist, UI designer and copywriter. Personalize an existing landing page to match an ad creative.
 
-Your job is to personalize an EXISTING landing page by modifying its copy to match an ad creative. The page structure, layout, images and design should stay the same — only the TEXT content changes.
-
-Ad creative: ${ad_description}
-
+Ad description: ${ad_description}
 Landing page URL: ${landing_page_url}
-Page successfully fetched: ${fetchSuccess}
-Existing page text content: ${textContent.slice(0, 2000)}
-Existing H1 tags: ${existingElements.h1s || 'not found'}
-Existing H2 tags: ${existingElements.h2s || 'not found'}
-Existing buttons: ${existingElements.buttons || 'not found'}
+Landing page content: ${landingPageContent}
+Hero background image URL (USE THIS EXACT URL): ${heroImage}
 
-YOUR TASK:
-1. Analyze the ad — extract headline, tone, CTA, audience, key message, brand colors
-2. Identify the key copy elements on the existing page (hero headline, subheadline, CTAs, feature titles)
-3. Rewrite ONLY the copy to align with the ad messaging while keeping CRO best practices:
-   - Message match: landing page headline should mirror the ad headline
-   - Maintain the same value proposition but in the ad's tone
-   - Keep CTAs action-oriented and matching the ad's CTA
-   - Preserve trust signals (ratings, reviews, stats) but reframe them to match the ad
-4. Generate a modified version of the page HTML that looks IDENTICAL to the original but with personalized copy
-   - If page was fetched: modify the actual HTML, replacing text nodes in h1, h2, h3, p, button, a tags
-   - If page was NOT fetched: create a high-fidelity mockup of what the page likely looks like, then personalize it
+Generate a STUNNING personalized HTML landing page that:
+1. Looks like the REAL existing page but with personalized copy matching the ad
+2. Uses this EXACT hero image: ${heroImage}
+3. Has a fixed navbar with logo and CTA button
+4. Has a full-screen hero (min-height: 100vh) with the image as background, dark overlay, huge headline (font-size: 72px, font-weight: 900), subheadline, and 2 CTA buttons
+5. Has a stats strip with 3-4 impressive numbers
+6. Has 3 feature cards with emoji icons, hover effects (transform: translateY(-8px))
+7. Has a testimonials section with 2 customer quotes and star ratings
+8. Has a final CTA banner section
+9. Has a footer with brand name and tagline
+10. Uses Google Fonts Inter: <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+11. All inline CSS, professional colors matching the ad brand
+12. Mobile responsive
 
-The output personalized_html MUST look like the REAL existing page — same colors, same layout, same structure — just with different copy that matches the ad.
+IMPORTANT: The personalized_html must be a complete, beautiful, professional HTML page.
 
-Respond ONLY with valid JSON, no markdown:
+Respond ONLY with valid JSON, no markdown fences:
 {
-  "ad_analysis": {
-    "headline": "...",
-    "tone": "...",
-    "cta": "...",
-    "audience": "...",
-    "key_message": "..."
-  },
-  "original_copy": {
-    "hero_headline": "...",
-    "hero_sub": "...",
-    "cta": "...",
-    "feature_1": "...",
-    "feature_2": "...",
-    "feature_3": "..."
-  },
-  "personalized_copy": {
-    "hero_headline": "...",
-    "hero_sub": "...",
-    "cta": "...",
-    "feature_1": "...",
-    "feature_2": "...",
-    "feature_3": "..."
-  },
-  "personalized_html": "<!DOCTYPE html>...",
-  "changes": ["CRO change 1", "CRO change 2", "CRO change 3", "CRO change 4", "CRO change 5"]
+  "ad_analysis": { "headline": "...", "tone": "...", "cta": "...", "audience": "...", "key_message": "..." },
+  "original_copy": { "hero_headline": "...", "hero_sub": "...", "cta": "...", "feature_1": "...", "feature_2": "...", "feature_3": "..." },
+  "personalized_copy": { "hero_headline": "...", "hero_sub": "...", "cta": "...", "feature_1": "...", "feature_2": "...", "feature_3": "..." },
+  "personalized_html": "<!DOCTYPE html><html lang='en'>...</html>",
+  "changes": ["change 1", "change 2", "change 3", "change 4", "change 5"]
 }`
         }]
       })
     });
 
-    const groqData = await groqRes.json();
-    if (!groqRes.ok) {
-      return res.status(500).json({ error: 'Groq API error: ' + JSON.stringify(groqData) });
+    const nvidiaData = await nvidiaRes.json();
+    if (!nvidiaRes.ok) {
+      return res.status(500).json({ error: 'NVIDIA API error: ' + JSON.stringify(nvidiaData) });
     }
 
-    const raw = groqData.choices?.[0]?.message?.content || '';
+    const raw = nvidiaData.choices?.[0]?.message?.content || '';
     const clean = raw.replace(/```json|```/g, '').trim();
 
     let parsed;
@@ -144,7 +144,6 @@ Respond ONLY with valid JSON, no markdown:
       }
     }
 
-    // Add fetch status to response
     parsed.fetch_success = fetchSuccess;
     return res.status(200).json(parsed);
   } catch (err) {
